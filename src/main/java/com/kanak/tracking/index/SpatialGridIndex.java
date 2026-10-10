@@ -17,13 +17,16 @@ public class SpatialGridIndex {
     private static final double CELL_DEG = 0.01;   // ~1.1 km per cell
 
     private final ConcurrentHashMap<Long, Set<Geofence>> cells = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Geofence> byId = new ConcurrentHashMap<>();   // NEW
 
     public void add(Geofence g) {
+        byId.put(g.getId(), g);                                                          // NEW
         forEachCell(g.boundingBox(), key ->
                 cells.computeIfAbsent(key, k -> ConcurrentHashMap.newKeySet()).add(g));
     }
 
     public void remove(Geofence g) {
+        byId.remove(g.getId());                                                          // NEW
         forEachCell(g.boundingBox(), key -> {
             Set<Geofence> set = cells.get(key);
             if (set != null) {
@@ -38,8 +41,14 @@ public class SpatialGridIndex {
         return set == null ? List.of() : new ArrayList<>(set);
     }
 
+    /** O(1) lookup by id, used to re-check zones a vehicle is currently inside. */
+    public Geofence findById(Long id) {                                                  // NEW
+        return byId.get(id);
+    }
+
     public void clear() {
         cells.clear();
+        byId.clear();                                                                    // NEW
     }
 
     private void forEachCell(BoundingBox b, LongConsumer action) {
