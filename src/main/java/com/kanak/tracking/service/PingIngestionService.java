@@ -2,6 +2,7 @@ package com.kanak.tracking.service;
 
 import com.kanak.tracking.domain.model.Device;
 import com.kanak.tracking.domain.state.LocationFix;
+import com.kanak.tracking.eta.SpeedEstimator;
 import com.kanak.tracking.repository.DeviceRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,15 +16,21 @@ public class PingIngestionService {
 
     private final DeviceRepository deviceRepository;
     private final LiveLocationStore store;
+    private final GeofenceEvaluationService geofenceService;
+    private final SpeedEstimator speedEstimator;
     private final Clock clock;
     private final Duration staleLimit;
 
     public PingIngestionService(DeviceRepository deviceRepository,
                                 LiveLocationStore store,
+                                GeofenceEvaluationService geofenceService,
+                                SpeedEstimator speedEstimator,
                                 Clock clock,
                                 @Value("${tracking.ping.stale-seconds:300}") long staleSeconds) {
         this.deviceRepository = deviceRepository;
         this.store = store;
+        this.geofenceService = geofenceService;
+        this.speedEstimator = speedEstimator;
         this.clock = clock;
         this.staleLimit = Duration.ofSeconds(staleSeconds);
     }
@@ -46,10 +53,18 @@ public class PingIngestionService {
         }
 
         LocationFix fix = new LocationFix(vehicleId, lat, lon, bearing, speed, timestamp);
-        return switch (store.offer(fix)) {
-            case UPDATED -> PingResult.ACCEPTED;
-            case DUPLICATE -> PingResult.DUPLICATE;
-            case OUT_OF_ORDER -> PingResult.OUT_OF_ORDER;
-        };
+        switch (store.offer(fix)) {
+            case UPDATED -> {
+                speedEstimator.update(vehicleId, speed);
+                geofenceService.evaluate(fix);
+                return PingResult.ACCEPTED;
+            }
+            case DUPLICATE -> {
+                return PingResult.DUPLICATE;
+            }
+            default -> {
+                return PingResult.OUT_OF_ORDER;
+            }
+        }
     }
 }

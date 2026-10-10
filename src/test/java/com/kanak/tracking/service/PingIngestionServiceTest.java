@@ -4,6 +4,7 @@ import com.kanak.tracking.domain.model.Device;
 import com.kanak.tracking.repository.DeviceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.kanak.tracking.eta.SpeedEstimator;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -33,7 +34,10 @@ class PingIngestionServiceTest {
 
         store = new LiveLocationStore();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        service = new PingIngestionService(repo, store, clock, 300);
+        service = new PingIngestionService(repo, store,
+                mock(GeofenceEvaluationService.class),
+                new SpeedEstimator(0.3, 5, 20, 1.0),
+                clock, 300);
     }
 
     @Test
