@@ -346,6 +346,20 @@ Important actions are logged as structured `key=value` lines, for example `geofe
 
 `GlobalExceptionHandler` maps validation errors, bad input and unexpected failures to a consistent `ApiError` body. Internal exception details are logged on the server and not sent to the client.
 
+### 10. Failure handling and recovery
+
+| Failure | What happens |
+|---|---|
+| Duplicate or replayed ping | Rejected as `DUPLICATE`, and the unique constraint on events stops a second event row even if two requests race |
+| Late or out-of-order ping | Rejected as `OUT_OF_ORDER` or `STALE`, the newer position is never overwritten |
+| Unknown device | Returned as `UNKNOWN_DEVICE` and counted, it does not throw or break the stream |
+| Device goes dark and resumes | Zone state is kept, so no false ENTRY / EXIT (see Gaps and recovery) |
+| Concurrent pings for one vehicle | Zone evaluation for a vehicle is synchronized, so state flips and events stay consistent |
+| Bad input or unexpected exception | Consistent `ApiError` response, details only in server logs |
+| App restart | Geofence events, geofences, devices and routes are in the database. Live position and zone state are in memory, so the first ping after restart re-initialises state without firing an event |
+
+**Known limits:** the demo database is H2 in memory, so data is lost on restart, and live state is held in one process. For production the plan is PostgreSQL for the tables and a shared store such as Redis for live position and zone state, so a restart or a second instance does not lose it.
+
 ---
 
 ## Complexity
