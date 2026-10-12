@@ -45,6 +45,111 @@ Layering is controller -> service -> repository. Geofence shapes use polymorphis
 
 ---
 
+## Data model
+
+The diagram renders on GitHub. Relationships are **logical**: tables reference each other by id columns (for example `vehicleId`), without JPA associations or database foreign keys, see Trade-offs.
+
+```mermaid
+erDiagram
+    BusinessUnit ||--o{ Vehicle : has
+    BusinessUnit ||--o{ UserAccount : has
+    Vehicle ||--o{ Device : "is tracked by"
+    Vehicle ||--o{ Route : "is assigned"
+    Route ||--o{ RoutePoint : "is drawn by"
+    Route ||--o{ Stop : "has"
+    Stop ||--o{ PickupRequest : "is requested at"
+    Vehicle ||--o{ PickupRequest : "serves"
+    GeofenceEntity ||--o{ GeofenceEvent : "produces"
+    Vehicle ||--o{ GeofenceEvent : "triggers"
+    GeofenceEntity ||--o{ AllowedVehicle : "is limited to"
+    Vehicle ||--o{ AllowedVehicle : "is allowed in"
+
+    BusinessUnit {
+        bigint id PK
+        string name
+    }
+    Vehicle {
+        bigint id PK
+        string regNo UK
+        bigint businessUnitId
+    }
+    Device {
+        string deviceId PK
+        bigint vehicleId
+    }
+    Route {
+        bigint id PK
+        bigint vehicleId
+        string name
+    }
+    RoutePoint {
+        bigint id PK
+        bigint routeId
+        int seq
+        double lat
+        double lon
+    }
+    Stop {
+        bigint id PK
+        bigint routeId
+        int seq
+        string name
+        double lat
+        double lon
+    }
+    PickupRequest {
+        bigint id PK
+        bigint employeeId
+        bigint stopId
+        bigint vehicleId
+        boolean active
+    }
+    GeofenceEntity {
+        bigint id PK
+        string name
+        string type "CIRCLE or RECT"
+        double centerLat
+        double centerLon
+        double radiusM
+        double minLat
+        double minLon
+        double maxLat
+        double maxLon
+        time activeFrom
+        time activeTo
+    }
+    AllowedVehicle {
+        bigint geofenceId
+        bigint vehicleId
+    }
+    GeofenceEvent {
+        bigint id PK
+        bigint geofenceId
+        bigint vehicleId
+        string type "ENTRY or EXIT"
+        timestamp eventTime
+        double lat
+        double lon
+    }
+    UserAccount {
+        bigint id PK
+        string username UK
+        string passwordHash
+        string role "ADMIN, EMPLOYEE, APPROVER, DEVICE"
+        bigint businessUnitId
+    }
+```
+
+Notes:
+
+- `AllowedVehicle` is the collection table JPA creates for `GeofenceEntity.allowedVehicleIds`. An empty set means the zone applies to all vehicles.
+- `GeofenceEvent` has a unique constraint on `(geofence_id, vehicle_id, event_time, event_type)`, which makes event writes idempotent.
+- `employeeId` in `PickupRequest` is a plain id, there is no employee table because employees are out of scope for this case study.
+- Circle zones use `centerLat`, `centerLon`, `radiusM`. Rectangle zones use `minLat`, `minLon`, `maxLat`, `maxLon`. The unused columns stay null.
+- Live position, latest fix per vehicle and zone state are kept in memory, not in the database (see Trade-offs).
+
+---
+
 ## How to run
 
 **Prerequisites:** JDK 17, Maven 3.9+.
@@ -267,6 +372,7 @@ V = vehicles, G = geofences, k = geofences near one ping, P = points on one rout
 | ETA along route polyline, no routing engine | Cheap, no external API | No live traffic or road closures |
 | Dedup plus DB unique constraint on events | Protects against races and replays | Extra index on the events table |
 | Caching device lookups for 10 min | Cuts DB load on the hot path | A re-assigned device can be stale for up to 10 min |
+| Entities reference each other by id, no JPA associations or foreign keys | No lazy-loading surprises, simple queries, fast writes on the ping path | The database does not enforce referential integrity, the service layer has to check that ids exist |
 | Single-process design | Easy to run and maintain | Horizontal scale needs partitioning pings by vehicle id |
 
 ---
