@@ -27,15 +27,18 @@ public class GeofenceEvaluationService {
     private final SpatialGridIndex index;
     private final ZoneStateStore stateStore;
     private final GeofenceEventRepository eventRepository;
+    private final TrackingMetrics metrics;
     private final ZoneId zone;
 
     public GeofenceEvaluationService(SpatialGridIndex index,
                                      ZoneStateStore stateStore,
                                      GeofenceEventRepository eventRepository,
+                                     TrackingMetrics metrics,
                                      @Value("${tracking.timezone:Asia/Kolkata}") String timezone) {
         this.index = index;
         this.stateStore = stateStore;
         this.eventRepository = eventRepository;
+        this.metrics = metrics;
         this.zone = ZoneId.of(timezone);
     }
 
@@ -48,7 +51,6 @@ public class GeofenceEvaluationService {
             boolean firstPing = !vz.isInitialized();
             vz.markInitialized();
 
-            // zones near the ping + zones the vehicle is currently inside (so EXIT is never missed)
             Map<Long, Geofence> toCheck = new LinkedHashMap<>();
             for (Geofence g : index.candidatesNear(fix.lat(), fix.lon())) {
                 toCheck.put(g.getId(), g);
@@ -56,7 +58,7 @@ public class GeofenceEvaluationService {
             for (Long zoneId : vz.insideZoneIds()) {
                 Geofence g = index.findById(zoneId);
                 if (g == null) {
-                    vz.remove(zoneId);              // zone was deleted
+                    vz.remove(zoneId);
                 } else {
                     toCheck.put(zoneId, g);
                 }
@@ -67,11 +69,11 @@ public class GeofenceEvaluationService {
 
                 ZoneState before = vz.get(g.getId());
                 ZoneState now = g.contains(fix.lat(), fix.lon()) ? ZoneState.INSIDE : ZoneState.OUTSIDE;
-                vz.set(g.getId(), now);                              // always track state
+                vz.set(g.getId(), now);
 
-                if (firstPing) continue;                             // initialise silently
-                if (!g.isActiveAt(localTime)) continue;              // outside time window: no event
-                if (before == now) continue;                         // nothing changed: fire once, not per ping
+                if (firstPing) continue;
+                if (!g.isActiveAt(localTime)) continue;
+                if (before == now) continue;
 
                 EventType type = (now == ZoneState.INSIDE) ? EventType.ENTRY : EventType.EXIT;
                 fired.add(buildEvent(g, fix, type));
@@ -80,8 +82,11 @@ public class GeofenceEvaluationService {
 
         if (!fired.isEmpty()) {
             eventRepository.saveAll(fired);
-            fired.forEach(e -> log.info("geofence_event type={} vehicleId={} geofenceId={}",
-                    e.getType(), e.getVehicleId(), e.getGeofenceId()));
+            fired.forEach(e -> {
+                metrics.geofenceEvent(e.getType());
+                log.info("geofence_event type={} vehicleId={} geofenceId={}",
+                        e.getType(), e.getVehicleId(), e.getGeofenceId());
+            });
         }
         return fired;
     }

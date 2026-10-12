@@ -1,15 +1,13 @@
 package com.kanak.tracking.service;
 
-import com.kanak.tracking.domain.model.Device;
-import com.kanak.tracking.repository.DeviceRepository;
+import com.kanak.tracking.eta.SpeedEstimator;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.kanak.tracking.eta.SpeedEstimator;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -21,23 +19,26 @@ class PingIngestionServiceTest {
     private static final double LAT = 28.6139, LON = 77.2090;
 
     private LiveLocationStore store;
+    private SimpleMeterRegistry registry;
     private PingIngestionService service;
 
     @BeforeEach
     void setUp() {
-        DeviceRepository repo = mock(DeviceRepository.class);
-        Device device = new Device();
-        device.setDeviceId("D1");
-        device.setVehicleId(7L);
-        when(repo.findById("D1")).thenReturn(Optional.of(device));
-        when(repo.findById("UNKNOWN")).thenReturn(Optional.empty());
+        DeviceLookupService lookup = mock(DeviceLookupService.class);
+        when(lookup.findVehicleId("D1")).thenReturn(7L);
+        when(lookup.findVehicleId("UNKNOWN")).thenReturn(null);
 
         store = new LiveLocationStore();
+        registry = new SimpleMeterRegistry();
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        service = new PingIngestionService(repo, store,
+        service = new PingIngestionService(lookup, store,
                 mock(GeofenceEvaluationService.class),
                 new SpeedEstimator(0.3, 5, 20, 1.0),
-                clock, 300);
+                new TrackingMetrics(registry), clock, 300);
+    }
+
+    private double count(String result) {
+        return registry.counter("tracking.pings", "result", result).count();
     }
 
     @Test
@@ -54,10 +55,10 @@ class PingIngestionServiceTest {
 
     @Test
     void olderPingNeverOverwritesNewerFix() {
-        service.ingest("D1", 28.70, 77.30, 0, 10, NOW);                       // fresh
-        PingResult r = service.ingest("D1", 28.10, 77.10, 0, 10, NOW.minusSeconds(180)); // 3 min old
+        service.ingest("D1", 28.70, 77.30, 0, 10, NOW);
+        PingResult r = service.ingest("D1", 28.10, 77.10, 0, 10, NOW.minusSeconds(180));
         assertEquals(PingResult.OUT_OF_ORDER, r);
-        assertEquals(28.70, store.get(7L).get().lat());                       // newer stands
+        assertEquals(28.70, store.get(7L).get().lat());
     }
 
     @Test
@@ -82,5 +83,18 @@ class PingIngestionServiceTest {
     void invalidCoordinatesThrow() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.ingest("D1", 95, LON, 0, 10, NOW));
+    }
+
+    @Test
+    void countersTrackEveryOutcome() {
+        service.ingest("D1", LAT, LON, 0, 10, NOW);                           // accepted
+        service.ingest("D1", LAT, LON, 0, 10, NOW);                           // duplicate
+        service.ingest("D1", LAT, LON, 0, 10, NOW.minusSeconds(10));          // out of order
+        service.ingest("D1", LAT, LON, 0, 10, NOW.minusSeconds(400));         // stale
+
+        assertEquals(1, count("ACCEPTED"));
+        assertEquals(1, count("DUPLICATE"));
+        assertEquals(1, count("OUT_OF_ORDER"));
+        assertEquals(1, count("STALE"));
     }
 }

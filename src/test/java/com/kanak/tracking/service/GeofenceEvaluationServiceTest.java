@@ -6,6 +6,7 @@ import com.kanak.tracking.domain.model.GeofenceEvent;
 import com.kanak.tracking.domain.state.LocationFix;
 import com.kanak.tracking.index.SpatialGridIndex;
 import com.kanak.tracking.repository.GeofenceEventRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +31,8 @@ class GeofenceEvaluationServiceTest {
     void setUp() {
         index = new SpatialGridIndex();
         service = new GeofenceEvaluationService(index, new ZoneStateStore(),
-                mock(GeofenceEventRepository.class), "Asia/Kolkata");
+                mock(GeofenceEventRepository.class),
+                new TrackingMetrics(new SimpleMeterRegistry()), "Asia/Kolkata");
         index.add(new CircleGeofence(1L, LAT, LON, 300, null, null, Set.of()));
     }
 
