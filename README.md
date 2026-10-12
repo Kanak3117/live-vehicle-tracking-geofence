@@ -199,7 +199,7 @@ It logs in, then sends 61 pings for `DEV-001` moving towards the pickup (one per
 | `tracking.eta.min-kmh` | `5` | Speed floor, so a red light does not give an infinite ETA |
 | `tracking.eta.default-kmh` | `20` | Speed used before any reading exists |
 | `tracking.eta.traffic-factor` | `1.0` | Multiplier on speed (0.8 = 20% slower) |
-| `spring.cache.caffeine.spec` | `maximumSize=10000,expireAfterWrite=10m` | Device cache size and TTL |
+| `spring.cache.caffeine.spec` | `maximumSize=10000,expireAfterWrite=10m,recordStats` | Device cache size, TTL, and hit/miss statistics |
 
 ---
 
@@ -330,6 +330,7 @@ Micrometer counters, readable at `/actuator/metrics` (admin only):
 
 - `tracking.pings` with tag `result` = `ACCEPTED`, `DUPLICATE`, `OUT_OF_ORDER`, `STALE`, `UNKNOWN_DEVICE`
 - `tracking.geofence.events` with tag `type` = `ENTRY`, `EXIT`
+- `cache.gets` for the `devices` cache, tag `result` = `hit` / `miss` (Caffeine statistics are switched on with `recordStats`), so the cache hit ratio can be checked, for example `/actuator/metrics/cache.gets?tag=name:devices&tag=result:hit`
 
 Important actions are logged as structured `key=value` lines, for example `geofence_event type=ENTRY vehicleId=7 geofenceId=1`, `geofence_created id=1 type=CIRCLE`, `geofence_index_loaded count=1`.
 
