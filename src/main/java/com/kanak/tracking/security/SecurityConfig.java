@@ -23,7 +23,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/actuator/health", "/error").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/pings").hasAnyRole("DEVICE", "ADMIN")
-                        .requestMatchers("/api/geofences/**", "/api/geofence-events/**", "/actuator/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/geofence-events/**").hasAnyRole("ADMIN", "APPROVER")
+                        .requestMatchers("/api/geofences/**", "/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/vehicles/**").hasAnyRole("ADMIN", "EMPLOYEE")
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class);

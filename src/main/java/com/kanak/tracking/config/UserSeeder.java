@@ -26,6 +26,7 @@ public class UserSeeder implements CommandLineRunner {
         create("admin", "admin123", Role.ADMIN);
         create("employee", "employee123", Role.EMPLOYEE);
         create("device", "device123", Role.DEVICE);
+        create("approver", "approver123", Role.APPROVER);
     }
 
     private void create(String username, String password, Role role) {
